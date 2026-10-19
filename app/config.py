@@ -7,6 +7,12 @@ changing a limit or path only requires editing one file.
 
 import os
 
+# ── Local-demo mode ──────────────────────────────────────────────────────
+# Set LOCAL_DEMO=1 in the environment to enable the PostgreSQL connection UI.
+# This mode is intended for loopback-bound development only (localhost).
+# The routes are disabled on external binding regardless of this flag.
+LOCAL_DEMO_MODE: bool = os.environ.get("LOCAL_DEMO", "").strip() == "1"
+
 # ── Grade Boundaries ─────────────────────────────────────────────────────
 MIN_GRADE: int = 0
 MAX_GRADE: int = 100
@@ -15,12 +21,18 @@ MAX_GRADE: int = 100
 BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR: str = os.path.join(BASE_DIR, "data")
 DEFAULT_DATA_FILE: str = os.path.join(DATA_DIR, "students.json")
+DEFAULT_DB_FILE: str = os.path.join(DATA_DIR, "students.db")
 
-# ── Grade Thresholds (for display status) ────────────────────────────────
+# ── Passing Threshold ────────────────────────────────────────────────────
+# Single authoritative value used by statistics, validation, and the frontend.
+# A student with grade >= PASSING_THRESHOLD is counted as passing.
+PASSING_THRESHOLD: int = 60
+
+# ── Grade Band Boundaries (for display labels) ────────────────────────────
 GRADE_EXCELLENT: int = 90
 GRADE_GOOD: int = 80
 GRADE_AVERAGE: int = 70
-GRADE_BELOW_AVG: int = 60
+GRADE_BELOW_AVG: int = 60   # == PASSING_THRESHOLD; label: "Passing (D)"
 
 # ── Menu Options ─────────────────────────────────────────────────────────
 MENU_ADD = 1
@@ -32,3 +44,7 @@ MENU_STATS = 6
 MENU_SORT = 7
 MENU_SAVE = 8
 MENU_EXIT = 9
+MENU_ANALYTICS = 10
+MENU_AT_RISK = 11
+MENU_EXPORT_CSV = 12
+MENU_IMPORT_CSV = 13

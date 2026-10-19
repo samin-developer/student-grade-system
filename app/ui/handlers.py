@@ -9,6 +9,9 @@ Handlers bridge the UI layer and the service layer:
 Adding a new feature = adding one new handler + one menu entry.
 """
 
+import os
+
+from app.config import DATA_DIR
 from app.services.student_manager import StudentManager
 from app.services.statistics_service import StatisticsService
 from app.ui.colors import Colors
@@ -27,7 +30,7 @@ class MenuHandler:
         Display.section_header("Add New Student", "➕", Colors.GREEN)
 
         name  = InputHelper.get_str("Enter student name: ")
-        grade = InputHelper.get_int("Enter grade (0-100): ")
+        grade = InputHelper.get_grade("Enter grade (0-100): ")
 
         try:
             student = manager.add_student(name, grade)
@@ -74,7 +77,7 @@ class MenuHandler:
 
         Display.student_table(manager.get_all_students())
         index     = InputHelper.get_int("Enter index of student to update: ")
-        new_grade = InputHelper.get_int("Enter new grade (0-100): ")
+        new_grade = InputHelper.get_grade("Enter new grade (0-100): ")
 
         try:
             updated = manager.update_grade(index, new_grade)
@@ -94,31 +97,37 @@ class MenuHandler:
 
     @staticmethod
     def search(manager: StudentManager) -> None:
-        """Prompts for a name and shows the matching student."""
+        """Prompts for a name and shows all matching students.
+
+        Multiple students may share the same name; all matches are shown,
+        each identified by their stable UUID so the user can select the
+        correct one by index for further operations.
+        """
         Display.section_header("Search Student", "🔍", Colors.LAVENDER)
 
         if manager.is_empty():
             Display.warn("No students in the system.")
             return
 
-        name  = InputHelper.get_str("Enter name to search: ")
-        index = manager.search_by_name(name)
+        name    = InputHelper.get_str("Enter name to search: ")
+        matches = manager.search_all_by_name(name)
 
         C = Colors
-        if index == -1:
+        if not matches:
             Display.error(f"Student '{name}' not found.")
         else:
-            student = manager.get_student(index)
-            student_id = Display._format_id(index)
             print()
-            print(f"  {C.DIM}┌{'─' * 44}┐{C.END}")
-            print(f"  {C.DIM}│{C.END}  {C.GOLD}{C.BOLD}🎯 Match Found{C.END}")
-            print(f"  {C.DIM}│{C.END}  {C.DIM}ID:{C.END}    {C.WHITE}{student_id}{C.END}")
-            print(f"  {C.DIM}│{C.END}  {C.DIM}Index:{C.END} {C.WHITE}{C.BOLD}{index}{C.END}")
-            print(f"  {C.DIM}│{C.END}  {C.DIM}Name:{C.END}  {C.WHITE}{C.BOLD}{student.name}{C.END}")
-            color, status, _, _ = Display._grade_badge(student.grade)
-            print(f"  {C.DIM}│{C.END}  {C.DIM}Grade:{C.END} {color}{C.BOLD}{student.grade}{C.END}  {C.DIM}({status}){C.END}")
-            print(f"  {C.DIM}└{'─' * 44}┘{C.END}")
+            print(f"  {C.GOLD}{C.BOLD}🎯 {len(matches)} match(es) found for '{name}':{C.END}")
+            for index, student in matches:
+                student_display_id = Display._format_id(index)
+                color, status, _, _ = Display._grade_badge(student.grade)
+                print(f"  {C.DIM}┌{'─' * 44}┐{C.END}")
+                print(f"  {C.DIM}│{C.END}  {C.DIM}UUID:{C.END}  {C.DIM}{student.id}{C.END}")
+                print(f"  {C.DIM}│{C.END}  {C.DIM}ID:{C.END}    {C.WHITE}{student_display_id}{C.END}")
+                print(f"  {C.DIM}│{C.END}  {C.DIM}Index:{C.END} {C.WHITE}{C.BOLD}{index}{C.END}")
+                print(f"  {C.DIM}│{C.END}  {C.DIM}Name:{C.END}  {C.WHITE}{C.BOLD}{student.name}{C.END}")
+                print(f"  {C.DIM}│{C.END}  {C.DIM}Grade:{C.END} {color}{C.BOLD}{student.grade}{C.END}  {C.DIM}({status}){C.END}")
+                print(f"  {C.DIM}└{'─' * 44}┘{C.END}")
 
     # ── 6. Statistics ────────────────────────────────────────────────────
 
@@ -155,7 +164,11 @@ class MenuHandler:
         print(f"    {C.PINK}{C.BOLD}2.{C.END} {C.WHITE}Descending (highest → lowest){C.END}")
         print()
 
-        choice    = InputHelper.get_int("Choose sort order (1 or 2): ")
+        while True:
+            choice = InputHelper.get_int("Choose sort order (1 or 2): ")
+            if choice in (1, 2):
+                break
+            Display.error("Invalid choice. Please enter 1 or 2.")
         ascending = choice != 2
 
         manager.sort_by_grade(ascending=ascending)
@@ -188,3 +201,85 @@ class MenuHandler:
         print(f"  {C.INDIGO}{C.BOLD}║{C.END}{C.BG_DEEP}{C.WHITE}{C.BOLD}{'👋  Goodbye! Thank you for using the system.':^50}{C.END}{C.INDIGO}{C.BOLD}║{C.END}")
         print(f"  {C.INDIGO}{C.BOLD}╚{'═' * 50}╝{C.END}")
         print()
+
+    # ── 10. Analytics Dashboard ──────────────────────────────────────────
+
+    @staticmethod
+    def analytics_dashboard(manager: StudentManager) -> None:
+        """Computes and displays the full academic analytics dashboard."""
+        Display.section_header("Academic Analytics Dashboard", "📈", Colors.TEAL)
+
+        if manager.is_empty():
+            Display.warn("No students to analyse.")
+            return
+
+        students = manager.get_all_students()
+        dash = StatisticsService.compute_analytics(students)
+        Display.analytics_dashboard(dash)
+
+    # ── 11. At-Risk Detection ────────────────────────────────────────────
+
+    @staticmethod
+    def at_risk(manager: StudentManager) -> None:
+        """Identifies and displays at-risk students."""
+        Display.section_header("At-Risk Student Detection", "⚠️ ", Colors.RED)
+
+        if manager.is_empty():
+            Display.warn("No students in the system.")
+            return
+
+        students = manager.get_all_students()
+        at_risk_list = StatisticsService.detect_at_risk(students)
+        Display.at_risk_report(at_risk_list)
+
+    # ── 12. Export CSV ───────────────────────────────────────────────────
+
+    @staticmethod
+    def export_csv(manager: StudentManager) -> None:
+        """Exports all students to a CSV file in the data directory."""
+        Display.section_header("Export Students to CSV", "📤", Colors.GREEN)
+
+        if manager.is_empty():
+            Display.warn("No students to export.")
+            return
+
+        C = Colors
+        default_path = os.path.join(DATA_DIR, "students_export.csv")
+        print(f"  {C.DIM}Default path: {default_path}{C.END}")
+        raw = input(
+            f"  {C.INDIGO}{C.BOLD}▸{C.END} {C.WHITE}Export path (Enter for default): {C.END}"
+        ).strip()
+        filepath = raw if raw else default_path
+
+        try:
+            count = manager.export_csv(filepath)
+            Display.csv_result("Exported", count, [])
+            Display.info(f"File saved to: {filepath}")
+        except OSError as exc:
+            Display.error(f"Export failed: {exc}")
+
+    # ── 13. Import CSV ───────────────────────────────────────────────────
+
+    @staticmethod
+    def import_csv(manager: StudentManager) -> None:
+        """Imports students from a CSV file, appending to the current list."""
+        Display.section_header("Import Students from CSV", "📥", Colors.SKY)
+
+        C = Colors
+        filepath = input(
+            f"  {C.INDIGO}{C.BOLD}▸{C.END} {C.WHITE}CSV file path to import: {C.END}"
+        ).strip()
+        if not filepath:
+            Display.error("No path entered.")
+            return
+        if not os.path.isfile(filepath):
+            Display.error(f"File not found: {filepath}")
+            return
+
+        try:
+            imported, errors = manager.import_csv(filepath)
+            Display.csv_result("Imported", imported, errors)
+            if imported:
+                Display.student_table(manager.get_all_students())
+        except OSError as exc:
+            Display.error(f"Import failed: {exc}")
